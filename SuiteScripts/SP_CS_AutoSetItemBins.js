@@ -5,11 +5,9 @@
 
 define(
     [
-        'N/ui/dialog',
         'N/url'
     ],
     (
-        nsDialog,
         nsUrl
     ) => {
         const pageInit = (context) => {
