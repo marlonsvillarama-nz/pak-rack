@@ -60,6 +60,8 @@ define(
                     .filter(result => result.id == itemList[i])
                     .map(result => {
                         return {
+                            id: result.id,
+                            item: result.getValue({ name: 'itemid' }),
                             number: result.getValue({ name: 'binnumber' }),
                             available: result.getValue({ name: 'binonhandavail' }),
                             preferred: result.getValue({ name: 'preferredbin' })
@@ -85,6 +87,7 @@ define(
                     [ 'binnumber', 'isnotempty', null ]
                 ],
                 columns: [
+                    'itemid',
                     'binnumber',
                     'binonhandavail',
                     'preferredbin'

@@ -5,9 +5,11 @@
 
 define(
     [
+        'N/currentRecord',
         'N/url'
     ],
     (
+        nsCR,
         nsUrl
     ) => {
         const pageInit = (context) => {
@@ -55,15 +57,20 @@ define(
         const setItemBins = (options) => {
             let thisRecord = options.record;
             let binData = options.data;
+            console.log(`binData ==>`, binData);
 
             let lineCount = thisRecord.getLineCount({ sublistId: 'item' });
+            let cr = nsCR.get();
             for (let i = 0; i < lineCount; i++) {
-                thisRecord.selectLine({ sublistId: 'item', line: i });
-                let item = thisRecord.getCurrentSublistValue({ sublistId: 'item', fieldId: 'item' });
-                let itemQuantity = thisRecord.getCurrentSublistValue({ sublistId: 'item', fieldId: 'quantity' });
-                console.log(`item = ${item}, itemQuantity = ${itemQuantity}`);
                 
-                // let totalQuantityToSet = itemQuantity;
+                let item = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
+                let itemName = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'itemtype', line: i });
+                
+                cr.selectLine({ sublistId: 'item', line: i });
+                let itemQuantity = cr.getSublistValue({ sublistId: 'item', fieldId: 'quantity', line: i });
+                let totalQuantityToSet = itemQuantity;
+                console.log(`item = ${item}, itemName = ${itemName}, itemQuantity = ${itemQuantity}, totalQuantityToSet = ${totalQuantityToSet}`);
+
                 let itemBins = binData.filter(bin => bin.item === item);
                 console.log(`${title} itemBins`, itemBins);
 
@@ -71,10 +78,10 @@ define(
                     continue;
                 }
 
-                let preferredBin = itemBins.filter(bin => bin.preferred === true);
+                let preferredBin = itemBins[0].bins.filter(bin => bin.preferred === true);
                 console.log(`${title} preferredBin`, preferredBin);
 
-                let remainingBins = preferredBin.length > 0 ? itemBins.filter(bin => bin.number !== preferredBin[0].number) : itemBins;
+                let remainingBins = preferredBin.length > 0 ? itemBins[0].bins.filter(bin => bin.number !== preferredBin[0].number) : itemBins[0].bins;
                 console.log(`${title} remainingBins`, remainingBins);
                 
                 let quantityToSet = 0;
@@ -84,25 +91,36 @@ define(
 
                 if (preferredBin.length) {
                     let availableQty = preferredBin[0].available;
+                    console.log(`>>> availableQty = ${availableQty}, itemQuantity = ${itemQuantity}`);
                     quantityToSet = availableQty > itemQuantity ? itemQuantity : availableQty;
                     binToSet = preferredBin[0].number;
                     console.log(`${title} preferred bin`, `quantityToSet = ${quantityToSet}, binToSet = ${binToSet}`);
 
                     setInventoryDetailLine({ record: inventoryDetail, line: i, bin: binToSet, quantity: quantityToSet });
+                    totalQuantityToSet -= quantityToSet;
                 }
 
-                for (let j = 0, binCount = remainingBins.length; i < binCount; i++) {
-                    let availableQty = remainingBins[i].available;
+                for (let j = 0, binCount = remainingBins.length; j < binCount; j++) {
+                    console.log(`remainingBins j=${j}`, remainingBins[j]);
+                    if (totalQuantityToSet <= 0) {
+                        break;
+                    }
+                    let availableQty = parseInt(remainingBins[j].available);
+                    console.log(`>>> availableQty = ${availableQty}, itemQuantity = ${itemQuantity}`);
                     quantityToSet = availableQty > itemQuantity ? itemQuantity : availableQty;
-                    binToSet = remainingBins[i].number;
-                    console.log(`${title} remainingBin i=${i}`, `quantityToSet = ${quantityToSet}, binToSet = ${binToSet}`);
+                    binToSet = remainingBins[j].number;
+                    console.log(`${title} remainingBin j=${j}`, `quantityToSet = ${quantityToSet}, binToSet = ${binToSet}`);
 
                     setInventoryDetailLine({ record: inventoryDetail, line: i, bin: binToSet, quantity: quantityToSet });
+                    totalQuantityToSet -= quantityToSet;
                 }
             }
         };
 
         const setInventoryDetailLine = (options) => {
+            // options.record.setSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumber', value: options.bin, line: options.line });
+            // options.record.setSublistValue({ sublistId: 'inventoryassignment', fieldId: 'quantity', value: options.quantity, line: options.line });
+            console.log(`==>> Setting bin = ${options.bin}, quantity = ${options.quantity} on inventory detail line ${options.line}...`);
             options.record.selectNewLine({ sublistId: 'inventoryassignment' });
             options.record.setCurrentSublistValue({ sublistId: 'inventoryassignment', fieldId: 'binnumber', value: options.bin });
             options.record.setCurrentSublistValue({ sublistId: 'inventoryassignment', fieldId: 'quantity', value: options.quantity });
