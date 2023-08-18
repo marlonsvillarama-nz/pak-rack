@@ -57,7 +57,8 @@ define(
                 });
     
                 let itemList = [];
-                for (let i = 0, ilen = itemFulfillment.getLineCount({ sublistId: 'item' }); i < ilen; i++) {
+                // for (let i = 0, ilen = itemFulfillment.getLineCount({ sublistId: 'item' }); i < ilen; i++) {
+                for (let i = 0, ilen = 1; i < ilen; i++) {
                     itemList.push(itemFulfillment.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i }));
                 }
                 nsLog.debug({ title: `${title} itemList`, details: JSON.stringify(itemList) });
@@ -81,64 +82,104 @@ define(
             let binData = options.data;
             nsLog.debug({ title: `${title} binData`, details: JSON.stringify(binData) });
 
+            let itemBinData = {};
             let lineCount = thisRecord.getLineCount({ sublistId: 'item' });
             for (let i = 0; i < lineCount; i++) {
-                
+                let totalLineQuantitySet = 0;
                 let item = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
                 let itemName = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'itemtype', line: i });
+
+                itemBinData[item] = itemBinData[item] || {};
                 
                 // .selectLine({ sublistId: 'item', line: i });
                 let itemQuantity = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'quantity', line: i });
                 let totalQuantityToSet = itemQuantity;
                 nsLog.debug({ title: title, details: `item = ${item}, itemName = ${itemName}, itemQuantity = ${itemQuantity}, totalQuantityToSet = ${totalQuantityToSet}` });
 
-                let itemBins = binData.filter(bin => bin.item === item);
+                let itemBins = binData.find(bin => bin.item === item);
                 nsLog.debug({ title: `${title} itemBins`, details: itemBins });
-
-                if (itemBins.length <= 0) {
+                if (!itemBins) {
                     continue;
                 }
 
-                let preferredBin = itemBins[0].bins.filter(bin => bin.preferred === true);
+                for (let j = 0, binCount = itemBins.bins.length; j < binCount; j++) {
+                    let b = itemBins.bins[j];
+                    itemBinData[item][b.number] = itemBinData[item][b.number] || { available: b.available };
+                }
+                nsLog.audit({ title: `${title} itemBinData`, details: JSON.stringify(itemBinData) });
+
+                let preferredBin = itemBins.bins.filter(bin => bin.preferred === true);
                 nsLog.debug({ title: `${title} preferredBin`, details: JSON.stringify(preferredBin) });
 
-                let remainingBins = preferredBin.length > 0 ? itemBins[0].bins.filter(bin => bin.number !== preferredBin[0].number) : itemBins[0].bins;
+                let remainingBins = preferredBin.length > 0 ? itemBins.bins.filter(bin => bin.number !== preferredBin[0].number) : itemBins.bins;
                 nsLog.debug({ title: `${title} remainingBins`, details: JSON.stringify(remainingBins) });
                 
                 let quantityToSet = 0;
                 let binToSet = null;
                 let inventoryDetail = thisRecord.getSublistSubrecord({ sublistId: 'item', fieldId: 'inventorydetail', line: i });
 
+                for (let j = inventoryDetail.getLineCount({ sublistId: 'inventoryassignment' }) - 1; j >= 0; j--) {
+                    inventoryDetail.removeLine({ sublistId: 'inventoryassignment' , line: j });
+                }
+
                 nsLog.debug({ title: title, details: `BEFORE preferredBin totalQuantityToSet = ${totalQuantityToSet}` });
+                let invDetailIndex = 0;
                 if (preferredBin.length) {
-                    let availableQty = preferredBin[0].available;
-                    nsLog.debug({ title: title, details: `>>> availableQty = ${availableQty}, itemQuantity = ${itemQuantity}` });
-                    quantityToSet = availableQty > itemQuantity ? itemQuantity : availableQty;
+                    // let availableQty = preferredBin[0].available;
                     binToSet = preferredBin[0].number;
+
+                    let availableQty = parseInt(itemBinData[item][binToSet].available);
+                    nsLog.debug({ title: title, details: `>>> availableQty = ${availableQty}, itemQuantity = ${itemQuantity}` });
+
+                    quantityToSet = availableQty > totalQuantityToSet ? totalQuantityToSet : availableQty;
                     nsLog.debug({ title: `${title} preferred bin`, details: `quantityToSet = ${quantityToSet}, binToSet = ${binToSet}` });
 
-                    setInventoryDetailLine({ record: inventoryDetail, line: 0, bin: binToSet, quantity: quantityToSet });
-                    totalQuantityToSet -= quantityToSet;
+                    if (quantityToSet > 0) {
+                        setInventoryDetailLine({ record: inventoryDetail, line: invDetailIndex, bin: binToSet, quantity: quantityToSet });
+                        totalQuantityToSet -= quantityToSet;
+                        itemBinData[item][binToSet].available -= quantityToSet;
+                        nsLog.audit({ title: `${title} preferred bin itemBinData`, details: JSON.stringify(itemBinData) });
+
+                        totalLineQuantitySet += quantityToSet;
+                        invDetailIndex++;
+                    }
                 }
                 nsLog.debug({ title: title, details: `AFTER preferredBin totalQuantityToSet = ${totalQuantityToSet}` });
+                if (totalQuantityToSet <= 0) {
+                    continue;
+                }
 
-                for (let j = 0, binCount = remainingBins.length; j < binCount; j++) {
+                binLoop: for (let j = 0, binCount = remainingBins.length; j < binCount; j++) {
                     nsLog.debug({ title: `${title} remainingBins j=${j}`, details: JSON.stringify(remainingBins[j]) });
                     nsLog.debug({ title: title, details: `BEFORE bin totalQuantityToSet = ${totalQuantityToSet}` });
                     if (totalQuantityToSet <= 0) {
-                        break;
+                        break binLoop;
                     }
-                    let availableQty = parseInt(remainingBins[j].available);
-                    nsLog.debug({ title: title, details: `>>> availableQty = ${availableQty}, itemQuantity = ${itemQuantity}` });
-                    quantityToSet = availableQty > itemQuantity ? itemQuantity : availableQty;
+
                     binToSet = remainingBins[j].number;
+
+                    // let availableQty = parseInt(remainingBins[j].available);
+                    let availableQty = parseInt(itemBinData[item][binToSet].available);
+                    nsLog.debug({ title: title, details: `>>> availableQty = ${availableQty}, itemQuantity = ${itemQuantity}` });
+
+                    quantityToSet = availableQty > totalQuantityToSet ? totalQuantityToSet : availableQty;
                     nsLog.debug({ title: `${title} remainingBin j=${j}`, details: `quantityToSet = ${quantityToSet}, binToSet = ${binToSet}` });
 
-                    let line = preferredBin.length > 0 ? (j + 1) : j;
-                    setInventoryDetailLine({ record: inventoryDetail, line: line, bin: binToSet, quantity: quantityToSet });
-                    totalQuantityToSet -= quantityToSet;
-                    nsLog.debug({ title: title, details: `AFTER bin totalQuantityToSet = ${totalQuantityToSet}` });
+                    if (quantityToSet > 0) {
+                        // let line = preferredBin.length > 0 ? (invDetailIndex + 1) : invDetailIndex;
+                        setInventoryDetailLine({ record: inventoryDetail, line: invDetailIndex, bin: binToSet, quantity: quantityToSet });
+                        totalQuantityToSet -= quantityToSet;
+                        nsLog.debug({ title: title, details: `AFTER bin totalQuantityToSet = ${totalQuantityToSet}` });
+
+                        itemBinData[item][binToSet].available -= quantityToSet;
+                        nsLog.audit({ title: `${title} remainingBin invDetailIndex=${invDetailIndex} itemBinData`, details: JSON.stringify(itemBinData) });
+
+                        totalLineQuantitySet += quantityToSet;
+                        invDetailIndex++;
+                    }
                 }
+
+                nsLog.audit({ title: `${title} item = ${item} totalLineQuantitySet`, details: totalLineQuantitySet });
             }
         };
 
@@ -227,6 +268,7 @@ define(
         };
 
         const buildError = (msg) => {
+            let title = `${MODULE_NAME}.BuildError`;
             nsLog.error({ title: title, details: msg });
             return JSON.stringify({ status: -1, error: msg });
         };

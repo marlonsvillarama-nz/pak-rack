@@ -24,42 +24,54 @@ function(search, serverWidget, log) {
         let frmSO = scriptContext.form;
         let recSO = scriptContext.newRecord;
         let idSO = recSO.id;
-        let bShowDepositImage = true;
+        let bShowDepositImage = false;
 
-        if (sContextType == scriptContext.UserEventType.VIEW || sContextType == scriptContext.UserEventType.EDIT) {
-            try {
-                search.create({
-                    type: search.Type.CUSTOMER_DEPOSIT,
-                    filters: [
-                        ['salesorder', search.Operator.ANYOF, idSO], 'AND',
-                        ['mainline', search.Operator.IS, 'T']
-                    ],
-                }).run().each((oResult) => {
-                    log.debug({title: 'oResult', details: oResult});
-                    bShowDepositImage = false;
-                });
+        if (sContextType !== scriptContext.UserEventType.VIEW && sContextType !== scriptContext.UserEventType.EDIT) {
+            return;
+        }
 
-                let sHtml = '<span id="custbody_deposit_cod_image_fs_lbl_uir_label" class="smallgraytextnolink uir-label ">';
-                sHtml += '    <span id="custbody_deposit_cod_image_fs_lbl" class="labelSpanEdit smallgraytextnolink" style="">';
-                sHtml += '        <a tabindex="-1" title="What\'s this?" href="javascript:void(&quot;help&quot;)"'; 
-                sHtml += '              style="cursor:help" onclick="return nlFieldHelp(\'Field Help\', \'custbody_deposit_cod_image\', this)"';
-                sHtml += '              class="smallgraytextnolink" onmouseover="this.className=\'smallgraytext\'; return true;"'; 
-                sHtml += '              onmouseout="this.className=\'smallgraytextnolink\'; ">Deposit/COD image</a>';
-                sHtml += '</span>';
-                sHtml += '</span>';
-                
+        let lookupOrder = search.lookupFields({
+            type: recSO.type,
+            id: recSO.id,
+            columns: [ 'status' ]
+        });
+        log.debug({ title: 'lookupOrder', details: JSON.stringify(lookupOrder) });
+        if (lookupOrder.status[0].text.toLowerCase() == 'billed') {
+            return;
+        }
 
-                log.debug({title: 'bShowDepositImage', details: bShowDepositImage});
-                if (bShowDepositImage) {
-                    sHtml += '<img src="/core/media/media.nl?id=982264&c=3862661_SB2&h=tevEyL01FPWn4qpRkPbiSsKE1-cdlcmttbScw9oKcG84sDy_&expurl=T" width="100">';
-                }
+        try {
+            search.create({
+                type: search.Type.CUSTOMER_DEPOSIT,
+                filters: [
+                    ['salesorder', search.Operator.ANYOF, idSO], 'AND',
+                    ['mainline', search.Operator.IS, 'T']
+                ],
+            }).run().each((oResult) => {
+                log.debug({title: 'oResult', details: oResult});
+                bShowDepositImage = true;
+            });
 
-                frmSO.getField({
-                    id: FLD_DEPOSIT_IMAGE
-                }).defaultValue = sHtml;
-            } catch (ex) { 
-                log.error({ title: 'Error in setting image', details: ex });
+            let sHtml = '<span id="custbody_deposit_cod_image_fs_lbl_uir_label" class="smallgraytextnolink uir-label ">';
+            sHtml += '    <span id="custbody_deposit_cod_image_fs_lbl" class="labelSpanEdit smallgraytextnolink" style="">';
+            sHtml += '        <a tabindex="-1" title="What\'s this?" href="javascript:void(&quot;help&quot;)"'; 
+            sHtml += '              style="cursor:help" onclick="return nlFieldHelp(\'Field Help\', \'custbody_deposit_cod_image\', this)"';
+            sHtml += '              class="smallgraytextnolink" onmouseover="this.className=\'smallgraytext\'; return true;"'; 
+            sHtml += '              onmouseout="this.className=\'smallgraytextnolink\'; ">Deposit/COD image</a>';
+            sHtml += '</span>';
+            sHtml += '</span>';
+            
+
+            log.debug({title: 'bShowDepositImage', details: bShowDepositImage});
+            if (bShowDepositImage) {
+                sHtml += '<img src="/core/media/media.nl?id=982264&c=3862661_SB2&h=tevEyL01FPWn4qpRkPbiSsKE1-cdlcmttbScw9oKcG84sDy_&expurl=T" width="100">';
             }
+
+            frmSO.getField({
+                id: FLD_DEPOSIT_IMAGE
+            }).defaultValue = sHtml;
+        } catch (ex) { 
+            log.error({ title: 'Error in setting image', details: ex });
         }
     }
 
