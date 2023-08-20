@@ -50,30 +50,101 @@ define(
             let title = `${MODULE_NAME}.FulfillOrder`;
 
             try {
-                let itemFulfillment = nsRecord.transform({
-                    fromType: 'salesorder',
-                    fromId: order,
-                    toType: 'itemfulfillment'
+                let itemLocations = {};
+                let salesOrder = nsRecord.load({
+                    type: 'salesorder',
+                    id: order
                 });
-    
-                let itemList = [];
-                // for (let i = 0, ilen = itemFulfillment.getLineCount({ sublistId: 'item' }); i < ilen; i++) {
-                for (let i = 0, ilen = 1; i < ilen; i++) {
-                    itemList.push(itemFulfillment.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i }));
+                let itemCount = salesOrder.getLineCount({ sublistId: 'item' });
+                for (let i = 0; i < itemCount; i++) {
+                    let location = salesOrder.getSublistValue({ sublistId: 'item', fieldId: 'location', line: i });
+                    if (itemLocations[location]) {
+                        itemLocations[location]++;
+                    }
+                    else {
+                        itemLocations[location] = 1;
+                    }
                 }
-                nsLog.debug({ title: `${title} itemList`, details: JSON.stringify(itemList) });
-    
-                let itemBins = getItemBins({ items: itemList });
-                setItemBins({ record: itemFulfillment, data: itemBins });
-    
-                let itemFulfillmentId = itemFulfillment.save({ ignoreMandatoryFields: true });
-                nsLog.debug({ title: title, details: `Created IF ${itemFulfillmentId}.` });
+                nsLog.debug({ title: `${title} itemLocations`, details: JSON.stringify(itemLocations) });
+                
+                let maxLocation = '';
+                let maxCount = 0;
+                for (const [key, value] of Object.entries(itemLocations)) {
+                    if (value > maxCount) {
+                        maxLocation = key;
+                        maxCount = value;
+                    }
+                }
 
-                return { status: 1, data: itemFulfillmentId };
+                let itemFulfillments = [];
+                for (const location of Object.keys(itemLocations)) {
+                    let idFulfillment = createLocationFulfillment({
+                        order: order,
+                        location: location,
+                        defaultLocation: maxLocation
+                    });
+                    if (idFulfillment) {
+                        itemFulfillments.push(idFulfillment);
+                    }
+                }
+
+                return { status: 1, data: itemFulfillments };
             }
             catch (ex) {
                 return buildError(ex.toString());
             }
+        };
+
+        const createLocationFulfillment = (options) => {
+            let title = `${MODULE_NAME}.CreateLocationFulfillment`;
+            nsLog.debug({ title: `${title} options`, details: JSON.stringify(options) });
+            if (!options.location) {
+                nsLog.debug({ title: title, details: `No location specified.` });
+                return null;
+            }
+            
+            let itemFulfillment = nsRecord.transform({
+                fromType: 'salesorder',
+                fromId: options.order,
+                toType: 'itemfulfillment'
+            });
+
+            let lineCount = itemFulfillment.getLineCount({ sublistId: 'item' });
+            nsLog.debug({ title: `${title} lineCount BEFORE`, details: lineCount });
+
+            for (let i = lineCount - 1; i >= 0; i--) {
+                let lineLocation = itemFulfillment.getSublistValue({ sublistId: 'item', fieldId: 'location', line: i });
+                if (!lineLocation && options.location === options.defaultLocation) {
+                    nsLog.debug({ title: title, details: `Setting location = ${options.defaultLocation} for line ${i}...` });
+                    itemFulfillment.setSublistValue({ sublistId: 'item', fieldId: 'location', line: i, value: options.defaultLocation });
+                }
+                else if (options.location !== lineLocation) {
+                    nsLog.debug({ title: title, details: `Unchecking line ${i}...` });
+                    itemFulfillment.setSublistValue({ sublistId: 'item', fieldId: 'itemreceive', value: false, line: i });
+                }
+                else {
+                    nsLog.debug({ title: title, details: `Line ${i} has location ${lineLocation}.` });
+                }
+            }
+            
+            lineCount = itemFulfillment.getLineCount({ sublistId: 'item' });
+            nsLog.debug({ title: `${title} lineCount AFTER`, details: lineCount });
+            if (lineCount <= 0) {
+                return null;
+            }
+
+            let itemList = [];
+            for (let i = 0, ilen = itemFulfillment.getLineCount({ sublistId: 'item' }); i < ilen; i++) {
+            // for (let i = 0, ilen = 1; i < ilen; i++) {
+                itemList.push(itemFulfillment.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i }));
+            }
+            nsLog.debug({ title: `${title} itemList`, details: JSON.stringify(itemList) });
+
+            let itemBins = getItemBins({ items: itemList });
+            setItemBins({ record: itemFulfillment, data: itemBins, location: options.location });
+
+            let itemFulfillmentId = itemFulfillment.save({ ignoreMandatoryFields: true });
+            nsLog.debug({ title: title, details: `Created IF ${itemFulfillmentId}.` });
         };
 
         const setItemBins = (options) => {
@@ -85,10 +156,30 @@ define(
             let itemBinData = {};
             let lineCount = thisRecord.getLineCount({ sublistId: 'item' });
             for (let i = 0; i < lineCount; i++) {
-                let totalLineQuantitySet = 0;
+                title = `${MODULE_NAME}.SetItemBins line = ${i}`;
+                
                 let item = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'item', line: i });
                 let itemName = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'itemtype', line: i });
 
+                let lineLocation = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'location', line: i });
+                if (lineLocation != options.location) {
+                    nsLog.debug({ title: `${title} line = ${i}`, details: `lineLocation (${lineLocation}) != options.location (${options.location})` });
+                    continue;
+                }
+                
+                let itemType = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'itemtype', line: i });
+                if (itemType.toLowerCase() != 'invtpart') {
+                    nsLog.debug({ title: title, details: `Item ID ${item} on line ${i} is not an inventory part.` });
+                    continue;
+                }
+
+                let itemReceive = thisRecord.getSublistValue({ sublistId: 'item', fieldId: 'itemreceive', line: i });
+                if (!itemReceive) {
+                    nsLog.debug({ title: title, details: `Item ID ${item} on line ${i} is not marked for fulfillment.` });
+                    continue;
+                }
+
+                let totalLineQuantitySet = 0;
                 itemBinData[item] = itemBinData[item] || {};
                 
                 // .selectLine({ sublistId: 'item', line: i });
@@ -98,7 +189,8 @@ define(
 
                 let itemBins = binData.find(bin => bin.item === item);
                 nsLog.debug({ title: `${title} itemBins`, details: itemBins });
-                if (!itemBins) {
+                if (!itemBins.length) {
+                    nsLog.error({ title: title, details: `Item ID ${item} on line ${i} has no configured bins.` });
                     continue;
                 }
 
@@ -215,12 +307,19 @@ define(
                     .filter(result => result.id == itemList[i])
                     .map(result => {
                         return {
-                            id: result.id,
                             item: result.getValue({ name: 'itemid' }),
                             number: result.getValue({ name: 'binnumber' }),
                             available: result.getValue({ name: 'binonhandavail' }),
                             preferred: result.getValue({ name: 'preferredbin' })
                         };
+                    }).sort((a, b) => {
+                        if (a.number > b.number) {
+                            return 1;
+                        }
+                        else if (a.number < b.number) {
+                            return -1;
+                        }
+                        else { return 0; }
                     });
                 nsLog.debug({ title: `${title} item = ${itemList[i]}`, details: JSON.stringify(itemBinRows) });
                 itemBins.push({

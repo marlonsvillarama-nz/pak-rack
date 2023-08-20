@@ -17,17 +17,18 @@ define(
         const fulfillOrder = () => {
             let thisRecord = nsCR.get();
             console.log(`backendUrl = ${window.backendUrl}`);
-            Ext.getBody().mask("Creating item fulfillment...");
+            Ext.getBody().mask("Creating item fulfillments...");
             fetch(`${window.backendUrl}&action=fulfill&order=${thisRecord.id}`)
                 .then(response => response.json())
                 .then(response => {
                     if (response.status > 0) {
-                        let urlFulfillment = nsUrl.resolveRecord({
+                        /* let urlFulfillment = nsUrl.resolveRecord({
                             recordType: 'itemfulfillment',
                             recordId: response.data,
                             isEditMode: true
                         });
-                        window.location.replace(urlFulfillment);
+                        window.location.replace(urlFulfillment); */
+                        window.location.reload();
                     }
                     else {
                         alert(response.status < 0 ? response.error : 'An error has occurred. Please consult your Administrator.');
