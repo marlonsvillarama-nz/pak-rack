@@ -10,6 +10,7 @@ define(['N/search', 'N/ui/serverWidget','N/log'],
  */
 function(search, serverWidget, log) {
     const FLD_DEPOSIT_IMAGE = 'custbody_deposit_cod_image_inline';
+    const DEPOSIT_TERMS_ITEM = '11398';
     /**
      * Function definition to be triggered before record is loaded.
      *
@@ -41,16 +42,9 @@ function(search, serverWidget, log) {
         }
 
         try {
-            let searchResults = search.create({
-                type: search.Type.CUSTOMER_DEPOSIT,
-                filters: [
-                    ['salesorder', search.Operator.ANYOF, idSO], 'AND',
-                    ['mainline', search.Operator.IS, 'T']
-                ],
-            }).run().getRange({ start: 0, end: 1000 });
-            hideDepositImage = searchResults.length > 0;
-
+            hideDepositImage = getOrderDeposits(idSO) || getTaxInvoiceDeposit(idSO);
             log.debug({title: 'hideDepositImage', details: hideDepositImage});
+            
             let sHtml = '';
             if (!hideDepositImage) {
                 sHtml += '<span id="custbody_deposit_cod_image_fs_lbl_uir_label" class="smallgraytextnolink uir-label ">';
@@ -70,6 +64,32 @@ function(search, serverWidget, log) {
         } catch (ex) { 
             log.error({ title: 'Error in setting image', details: ex });
         }
+    }
+
+    function getOrderDeposits(orderId) {
+        let searchDeposits = search.create({
+            type: search.Type.CUSTOMER_DEPOSIT,
+            filters: [
+                [ 'salesorder', search.Operator.ANYOF, orderId ], 'AND',
+                [ 'mainline', search.Operator.IS, 'T' ]
+            ],
+        }).run().getRange({ start: 0, end: 1000 });
+        return searchDeposits.length > 0;
+    }
+
+    function getTaxInvoiceDeposit(orderId) {
+        let searchInvoices = search.create({
+            type: search.Type.INVOICE,
+            filters: [
+                [ 'mainline', search.Operator.IS, 'F' ],
+                'AND',
+                [ 'item', search.Operator.ANYOF, DEPOSIT_TERMS_ITEM ],
+                'AND',
+                [ 'createdfrom', search.Operator.ANYOF, orderId ]
+            ]
+        }).run().getRange({ start: 0, end: 1000 });
+
+        return searchInvoices.length > 0;
     }
 
     return {
