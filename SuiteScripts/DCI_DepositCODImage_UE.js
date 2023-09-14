@@ -37,9 +37,9 @@ function(search, serverWidget, log) {
             columns: [ 'status' ]
         });
         log.debug({ title: 'lookupOrder', details: JSON.stringify(lookupOrder) });
-        if (lookupOrder.status[0].text.toLowerCase() == 'billed') {
+        /* if (lookupOrder.status[0].text.toLowerCase() == 'billed') {
             return;
-        }
+        } */
 
         try {
             hideDepositImage = getOrderDeposits(idSO) || getTaxInvoiceDeposit(idSO);
@@ -85,9 +85,13 @@ function(search, serverWidget, log) {
                 'AND',
                 [ 'item', search.Operator.ANYOF, DEPOSIT_TERMS_ITEM ],
                 'AND',
-                [ 'createdfrom', search.Operator.ANYOF, orderId ]
+                [ 'createdfrom', search.Operator.ANYOF, orderId ],
+                'AND',
+                [ 'status', search.Operator.ANYOF, 'CustInvc:B' ]
             ]
         }).run().getRange({ start: 0, end: 1000 });
+
+        log.debug({ title: 'getTaxInvoiceDeposit', details: JSON.stringify(searchInvoices) });
 
         return searchInvoices.length > 0;
     }
